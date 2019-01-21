@@ -231,44 +231,53 @@ function pubtkt_parse($ticket) {
 	characters and match the key configured on the server). The
 	result is in binary, but can be passed to pubtkt_generate()
 	directly, as it will be Base64-encoded.
-	Requires Mcrypt! */
+	Requires openssl! */
 function pubtkt_encrypt_bauth($bauth, $key) {
 	if (strlen($key) != 16)
 		return null;
 	
-	$td = mcrypt_module_open(MCRYPT_RIJNDAEL_128, '', MCRYPT_MODE_CBC, '');
-	$iv = mcrypt_create_iv(mcrypt_enc_get_iv_size($td), MCRYPT_DEV_URANDOM);
-	mcrypt_generic_init($td, $key, $iv);
-	$encrypted = mcrypt_generic($td, $bauth);
-	mcrypt_generic_deinit($td);
-	mcrypt_module_close($td);
+	// Generate IV. random_bytes() is fit for cryptographic use according to manual.
+	$iv = random_bytes( 16);
 
-	return $iv . $encrypted;
+	// We need to pad to 128 bit blocks, because OPENSSL_ZERO_PADDING doesn't zero-pad
+	// but disables automatic padding. Brain-dead semantics, you know...
+	$bauth_len = strlen( $bauth);
+	$len_to_pad = 16-( $bauth_len%16);
+	$subj = str_pad( $bauth, $bauth_len+$len_to_pad, "\0");
+
+	// Encrypt using OpenSSL
+	$encrypted_value = openssl_encrypt( $subj, 'AES-128-CBC', $key, OPENSSL_ZERO_PADDING, $iv);
+
+	return $iv . base64_decode($encrypted_value);
 }
 
 /*  Decrypt a "bauth" passthru basic authentication value
  *  and return only the password with the given key (must be exactly 16
  *  characters). The input $bauth string should be binary,
  *  so it has to be decoded using base64_decode beforehand.
- *  Requires mcrypt!
+ *  Requires openssl!
  */
 function pubtkt_decrypt_bauth($bauth, $key) {
-    if (strlen($key) != 16)
-        return null;
+	if (strlen($key) != 16)
+		return null;
 
-    $td = mcrypt_module_open(MCRYPT_RIJNDAEL_128, '', MCRYPT_MODE_CBC, '');
-    $iv_s = mcrypt_enc_get_iv_size($td);
-    $iv = substr($bauth, 0, $iv_s);
-    $c_t = substr($bauth, $iv_s);
+	// Extract the IV. substr() works byte-wise.
+	$iv = substr( $bauth, 0, 16);
 
-    mcrypt_generic_init($td, $key, $iv);
-    $decrypted = mdecrypt_generic($td, $c_t);
-    mcrypt_generic_deinit($td);
-    mcrypt_module_close($td);
+	// Decrypt the payload.
+	$decrypted = openssl_decrypt( base64_encode(substr( $bauth, 16) ), 'AES-128-CBC', $key, OPENSSL_ZERO_PADDING, $iv);
 
-    $decrypted = trim($decrypted);
-    $pass = substr($decrypted, strpos($decrypted, ':') + 1);
-    return $pass;
+	// Return null in case of a decryption failure
+	if( $decrypted === false )
+		return null;
+
+	// Trim the trailing \0's
+	$decrypted = trim($decrypted);
+
+	// Extract the password.
+	$pass = substr( $decrypted, strpos( $decrypted, ':')+1);
+
+	return $pass;
 }
 
 ?>
