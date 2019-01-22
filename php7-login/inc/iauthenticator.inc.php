@@ -2,7 +2,15 @@
 
 interface iAuthenticator {
 
-	// Perform authentication, with implicit password rehash
+	// Fully bypasses the authentication logic provided in the shipped
+	// authentication module.
+	//
+	// This method may be used if your authentication mechanism already
+	// has built-in password validation and refreshing.
+	//
+	// When not implemented, this method SHALL return null.
+	// When implemented, it SHALL return true when user AND password
+	// matches. It MUST return false in any other case
 	public function authenticate( $username, $password);
 
 	// Get tokens
@@ -15,7 +23,7 @@ interface iAuthenticator {
 	public function fetch_2fa_secret( $username);
 
 	// Fetch profile from database
-	public function fetch_credentials( $username);
+	public function fetch_profile( $username);
 
 	// Update tokens
 	public function update_tokens( $username, $tokens);
